@@ -1,0 +1,98 @@
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const db = require('../db');
+const { isDM } = require('../utils/permissions');
+
+module.exports = {
+  data: new SlashCommandBuilder()
+    .setName('campaigns')
+    .setDescription('Gestisci le campagne di gioco')
+    .addSubcommand(sub =>
+      sub.setName('create')
+        .setDescription('Crea una nuova campagna e impostati come DM')
+        .addStringOption(opt =>
+          opt.setName('nome').setDescription('Nome della campagna').setRequired(true))
+        .addStringOption(opt =>
+          opt.setName('descrizione').setDescription('Breve descrizione').setRequired(false))
+    )
+    .addSubcommand(sub =>
+      sub.setName('switch')
+        .setDescription('Cambia la campagna attiva')
+        .addIntegerOption(opt =>
+          opt.setName('id').setDescription('ID della campagna').setRequired(true))
+    )
+    .addSubcommand(sub =>
+      sub.setName('list')
+        .setDescription('Mostra tutte le campagne di questa gilda'))
+    .addSubcommand(sub =>
+      sub.setName('current')
+        .setDescription('Mostra la campagna attiva')),
+
+  async execute(interaction) {
+    const sub = interaction.options.getSubcommand();
+    const guildId = interaction.guild.id;
+    const userId = interaction.user.id;
+
+    if (sub === 'create') {
+      const nome = interaction.options.getString('nome');
+      const descr = interaction.options.getString('descrizione') || '';
+
+      db.run(`INSERT INTO campaigns (guild_id, name, description, dm_id) VALUES (?, ?, ?, ?)`,
+        [guildId, nome, descr, userId],
+        function (err) {
+          if (err) {
+            console.error(err);
+            return interaction.reply({ content: '❌ Errore nella creazione.', ephemeral: true });
+          }
+          // Salviamo anche l'ID della campagna come "attiva" per la gilda
+          db.run(`UPDATE campaigns SET active = 0 WHERE guild_id = ? AND id != ?`, [guildId, this.lastID]);
+          db.run(`ALTER TABLE campaigns ADD COLUMN active INTEGER DEFAULT 0`, [], () => {
+            db.run(`UPDATE campaigns SET active = 1 WHERE id = ?`, [this.lastID]);
+          });
+          interaction.reply(`🏕️ Campagna **${nome}** creata e impostata come attiva (ID ${this.lastID}).`);
+        });
+    }
+
+    if (sub === 'switch') {
+      const id = interaction.options.getInteger('id');
+      const dm = await isDM(guildId, userId);
+      if (!dm) {
+        return interaction.reply({ content: '❌ Solo il DM può cambiare campagna.', ephemeral: true });
+      }
+      db.run(`UPDATE campaigns SET active = 0 WHERE guild_id = ?`, [guildId], () => {
+        db.run(`UPDATE campaigns SET active = 1 WHERE id = ? AND guild_id = ?`, [id, guildId], function (err) {
+          if (err || this.changes === 0) {
+            return interaction.reply({ content: '❌ Campagna non trovata.', ephemeral: true });
+          }
+          interaction.reply(`🔄 Campagna attiva cambiata a ID ${id}.`);
+        });
+      });
+    }
+
+    if (sub === 'list') {
+      db.all(`SELECT id, name, description, dm_id, active FROM campaigns WHERE guild_id = ?`, [guildId], (err, rows) => {
+        if (!rows.length) {
+          return interaction.reply('📭 Nessuna campagna trovata.');
+        }
+        const embed = new EmbedBuilder()
+          .setTitle('📜 Campagne di gilda')
+          .setDescription(rows.map(c => `${c.active ? '✅' : '⬜'} **[${c.id}]** ${c.name} — DM: <@${c.dm_id}>`).join('\n'))
+          .setColor(0x00BFFF);
+        interaction.reply({ embeds: [embed] });
+      });
+    }
+
+    if (sub === 'current') {
+      db.get(`SELECT id, name, description, dm_id FROM campaigns WHERE guild_id = ? AND active = 1`, [guildId], (err, row) => {
+        if (!row) {
+          return interaction.reply('ℹ️ Nessuna campagna attiva.');
+        }
+        const embed = new EmbedBuilder()
+          .setTitle(`🏕️ Campagna attiva: ${row.name}`)
+          .setDescription(row.description || 'Nessuna descrizione')
+          .addFields({ name: 'DM', value: `<@${row.dm_id}>` })
+          .setColor(0xFFD700);
+        interaction.reply({ embeds: [embed] });
+      });
+    }
+  }
+};

@@ -1,0 +1,79 @@
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const db = require('../db');
+const { isOwnerOrDM } = require('../utils/permissions');
+
+module.exports = {
+  data: new SlashCommandBuilder()
+    .setName('character')
+    .setDescription('Gestisci il tuo personaggio')
+    .addSubcommand(sub =>
+      sub.setName('create')
+        .setDescription('Crea un nuovo personaggio')
+        .addStringOption(opt =>
+          opt.setName('nome').setDescription('Nome del personaggio').setRequired(true))
+        .addStringOption(opt =>
+          opt.setName('classe').setDescription('Classe del personaggio').setRequired(true))
+        .addStringOption(opt =>
+          opt.setName('razza').setDescription('Razza del personaggio').setRequired(true))
+        .addIntegerOption(opt =>
+          opt.setName('iniziativa').setDescription('Valore iniziativa').setRequired(true))
+    )
+    .addSubcommand(sub =>
+      sub.setName('view')
+        .setDescription('Visualizza la scheda del tuo personaggio')
+        .addStringOption(opt =>
+          opt.setName('nome').setDescription('Nome del personaggio').setRequired(true))
+    ),
+
+  async execute(interaction) {
+    const sub = interaction.options.getSubcommand();
+
+    if (sub === 'create') {
+      const name = interaction.options.getString('nome');
+      const classe = interaction.options.getString('classe');
+      const razza = interaction.options.getString('razza');
+      const iniziativa = interaction.options.getInteger('iniziativa');
+      const guildId = interaction.guild.id;
+      const userId = interaction.user.id;
+
+      db.get(`SELECT * FROM characters WHERE owner_id = ? AND guild_id = ?`, [userId, guildId], (err, row) => {
+        if (row) {
+          return interaction.reply({ content: '❌ Hai già un personaggio per questa campagna.', ephemeral: true });
+        }
+        db.run(`INSERT INTO characters (guild_id, name, class, race, iniziativa, owner_id) VALUES (?, ?, ?, ?, ?, ?)`,
+          [guildId, name, classe, razza, iniziativa, userId],
+          function (err) {
+            if (err) {
+              console.error(err);
+              return interaction.reply({ content: '❌ Errore nella creazione del personaggio.', ephemeral: true });
+            }
+            interaction.reply(`✅ Personaggio **${name}** creato con successo!`);
+          });
+      });
+    }
+
+    if (sub === 'view') {
+      const name = interaction.options.getString('nome');
+      const guildId = interaction.guild.id;
+
+      db.get(`SELECT * FROM characters WHERE guild_id = ? AND name = ?`, [guildId, name], (err, row) => {
+        if (!row) {
+          return interaction.reply({ content: '❌ Personaggio non trovato.', ephemeral: true });
+        }
+
+        const embed = new EmbedBuilder()
+          .setTitle(`Scheda di ${row.name}`)
+          .addFields(
+            { name: 'Classe', value: row.class, inline: true },
+            { name: 'Razza', value: row.race, inline: true },
+            { name: 'Iniziativa', value: row.iniziativa?.toString() || '-', inline: true },
+            { name: 'HP', value: row.hp?.toString() || '-', inline: true },
+            { name: 'CA', value: row.ca?.toString() || '-', inline: true }
+          )
+          .setColor(0x00AE86);
+
+        interaction.reply({ embeds: [embed] });
+      });
+    }
+  }
+};

@@ -1,0 +1,9 @@
+// Ricerca fuzzy per nomi di personaggi/oggetti
+function fuzzyFind(name, list) {
+  if (!list || list.length === 0) return null;
+  const lower = name.toLowerCase();
+  return list.find(item => item.toLowerCase() === lower)
+      || list.find(item => item.toLowerCase().includes(lower));
+}
+
+module.exports = { fuzzyFind };

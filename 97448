@@ -1,0 +1,16 @@
+const db = require('../db');
+
+function isDM(guildId, userId) {
+  return new Promise((resolve, reject) => {
+    db.get(`SELECT dm_id FROM campaigns WHERE guild_id = ?`, [guildId], (err, row) => {
+      if (err) return reject(err);
+      resolve(row && row.dm_id === userId);
+    });
+  });
+}
+
+function isOwnerOrDM(character, userId, guildId) {
+  return isDM(guildId, userId).then(isDm => isDm || character.owner_id === userId);
+}
+
+module.exports = { isDM, isOwnerOrDM };

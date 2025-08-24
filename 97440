@@ -1,0 +1,62 @@
+const sqlite3 = require('sqlite3').verbose();
+const path = require('path');
+
+// 📌 Percorso del file SQLite
+const dbPath = path.resolve(__dirname, 'gdr-bot.db');
+const db = new sqlite3.Database(dbPath);
+
+db.serialize(() => {
+  // ========================
+  // 📌 Tabelle principali
+  // ========================
+
+  // Campagne
+  db.run(`CREATE TABLE IF NOT EXISTS campaigns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id TEXT,
+    name TEXT,
+    description TEXT,
+    dm_id TEXT,
+    active INTEGER DEFAULT 0
+  )`);
+
+  // Personaggi
+  db.run(`CREATE TABLE IF NOT EXISTS characters (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id TEXT,
+    name TEXT,
+    class TEXT,
+    race TEXT,
+    hp INTEGER DEFAULT 10,
+    ca INTEGER DEFAULT 10,
+    for_val INTEGER DEFAULT 0,
+    des_val INTEGER DEFAULT 0,
+    int_val INTEGER DEFAULT 0,
+    iniziativa INTEGER DEFAULT 0,
+    owner_id TEXT,
+    campaign_id INTEGER,
+    level INTEGER DEFAULT 1,
+    spells TEXT,
+    spell_slots INTEGER DEFAULT 0,
+    max_spell_slots INTEGER DEFAULT 0
+  )`);
+
+  // Missioni
+  db.run(`CREATE TABLE IF NOT EXISTS missions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id TEXT,
+    title TEXT,
+    description TEXT,
+    active INTEGER DEFAULT 1
+  )`);
+
+  // Tracce audio (per comando /audio)
+  db.run(`CREATE TABLE IF NOT EXISTS audio_tracks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id TEXT,
+    title TEXT,
+    url TEXT
+  )`);
+});
+
+module.exports = db;

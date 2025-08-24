@@ -1,0 +1,58 @@
+// index.js
+const fs = require('fs');
+const path = require('path');
+const { Client, Collection, GatewayIntentBits } = require('discord.js');
+require('dotenv').config();
+
+// Crea client Discord
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
+  ]
+});
+
+// Collezione comandi
+client.commands = new Collection();
+
+// Caricamento comandi da /commands
+const commandsPath = path.join(__dirname, 'commands');
+const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith('.js'));
+
+for (const file of commandFiles) {
+  const filePath = path.join(commandsPath, file);
+  const command = require(filePath);
+  if ('data' in command && 'execute' in command) {
+    client.commands.set(command.data.name, command);
+  } else {
+    console.log(`[ATTENZIONE] Il comando ${filePath} non ha "data" o "execute".`);
+  }
+}
+
+// Event: pronto
+client.once('ready', () => {
+  console.log(`✅ Bot connesso come ${client.user.tag}`);
+});
+
+// Event: interazione (slash commands)
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isChatInputCommand()) return;
+
+  const command = client.commands.get(interaction.commandName);
+
+  if (!command) {
+    console.error(`Nessun comando trovato per ${interaction.commandName}`);
+    return;
+  }
+
+  try {
+    await command.execute(interaction);
+  } catch (error) {
+    console.error(error);
+    await interaction.reply({ content: '❌ Errore nell’eseguire il comando.', ephemeral: true });
+  }
+});
+
+// Login bot
+client.login(process.env.TOKEN);

@@ -1,0 +1,58 @@
+const { SlashCommandBuilder } = require('discord.js');
+const db = require('../db');
+const { isDM } = require('../utils/permissions');
+
+module.exports = {
+  data: new SlashCommandBuilder()
+    .setName('levels')
+    .setDescription('Gestisci i livelli dei personaggi')
+    .addSubcommand(sub =>
+      sub.setName('up')
+        .setDescription('Aumenta di livello un personaggio (solo DM)')
+        .addStringOption(opt =>
+          opt.setName('nomepg').setDescription('Nome del personaggio').setRequired(true))
+        .addIntegerOption(opt =>
+          opt.setName('hp').setDescription('Nuovo HP massimo').setRequired(true))
+    )
+    .addSubcommand(sub =>
+      sub.setName('view')
+        .setDescription('Visualizza livello e HP di un personaggio')
+        .addStringOption(opt =>
+          opt.setName('nomepg').setDescription('Nome del personaggio').setRequired(true))
+    ),
+
+  async execute(interaction) {
+    const sub = interaction.options.getSubcommand();
+    const nomepg = interaction.options.getString('nomepg');
+    const guildId = interaction.guild.id;
+    const userId = interaction.user.id;
+
+    if (sub === 'up') {
+      const dm = await isDM(guildId, userId);
+      if (!dm) {
+        return interaction.reply({ content: '❌ Solo il DM può modificare i livelli.', ephemeral: true });
+      }
+
+      const newHP = interaction.options.getInteger('hp');
+
+      db.get(`SELECT * FROM characters WHERE guild_id = ? AND name = ?`, [guildId, nomepg], (err, row) => {
+        if (!row) {
+          return interaction.reply({ content: '❌ Personaggio non trovato.', ephemeral: true });
+        }
+
+        const newLevel = (row.level || 1) + 1;
+        db.run(`UPDATE characters SET level = ?, hp = ? WHERE id = ?`, [newLevel, newHP, row.id]);
+        interaction.reply(`📈 ${row.name} è salito al **livello ${newLevel}** con HP massimo **${newHP}**!`);
+      });
+    }
+
+    if (sub === 'view') {
+      db.get(`SELECT name, level, hp FROM characters WHERE guild_id = ? AND name = ?`, [guildId, nomepg], (err, row) => {
+        if (!row) {
+          return interaction.reply({ content: '❌ Personaggio non trovato.', ephemeral: true });
+        }
+        interaction.reply(`🧝 **${row.name}** → Livello: **${row.level || 1}**, HP: **${row.hp ?? '-'}**`);
+      });
+    }
+  }
+};

@@ -1,0 +1,6 @@
+// Calcolo ordine di iniziativa
+function sortByInitiative(combatants) {
+  return combatants.sort((a, b) => b.iniziativa - a.iniziativa);
+}
+
+module.exports = { sortByInitiative };

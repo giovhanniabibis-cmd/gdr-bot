@@ -1,0 +1,71 @@
+const { SlashCommandBuilder } = require('discord.js');
+const db = require('../db');
+const { isDM } = require('../utils/permissions');
+
+module.exports = {
+  data: new SlashCommandBuilder()
+    .setName('dmtools')
+    .setDescription('Strumenti rapidi per il DM')
+    .addSubcommand(sub =>
+      sub.setName('heal')
+        .setDescription('Cura un personaggio (solo DM)')
+        .addStringOption(opt =>
+          opt.setName('nomepg').setDescription('Nome del personaggio').setRequired(true))
+        .addIntegerOption(opt =>
+          opt.setName('hp').setDescription('HP da aggiungere o ripristinare').setRequired(true))
+    )
+    .addSubcommand(sub =>
+      sub.setName('damage')
+        .setDescription('Infliggi danno a un personaggio (solo DM)')
+        .addStringOption(opt =>
+          opt.setName('nomepg').setDescription('Nome del personaggio').setRequired(true))
+        .addIntegerOption(opt =>
+          opt.setName('hp').setDescription('Danno da infliggere').setRequired(true))
+    )
+    .addSubcommand(sub =>
+      sub.setName('delete')
+        .setDescription('Elimina un personaggio (solo DM)')
+        .addStringOption(opt =>
+          opt.setName('nomepg').setDescription('Nome del personaggio').setRequired(true))
+    ),
+
+  async execute(interaction) {
+    const sub = interaction.options.getSubcommand();
+    const nomepg = interaction.options.getString('nomepg');
+    const value = interaction.options.getInteger('hp');
+    const guildId = interaction.guild.id;
+    const userId = interaction.user.id;
+
+    const dm = await isDM(guildId, userId);
+    if (!dm) {
+      return interaction.reply({ content: '❌ Solo il DM può usare questi comandi.', ephemeral: true });
+    }
+
+    if (sub === 'heal') {
+      db.run(`UPDATE characters SET hp = hp + ? WHERE guild_id = ? AND name = ?`, [value, guildId, nomepg], function(err) {
+        if (err || this.changes === 0) {
+          return interaction.reply({ content: '❌ Personaggio non trovato.', ephemeral: true });
+        }
+        interaction.reply(`💖 ${nomepg} curato di ${value} HP!`);
+      });
+    }
+
+    if (sub === 'damage') {
+      db.run(`UPDATE characters SET hp = hp - ? WHERE guild_id = ? AND name = ?`, [value, guildId, nomepg], function(err) {
+        if (err || this.changes === 0) {
+          return interaction.reply({ content: '❌ Personaggio non trovato.', ephemeral: true });
+        }
+        interaction.reply(`💢 ${nomepg} ha subito ${value} danni!`);
+      });
+    }
+
+    if (sub === 'delete') {
+      db.run(`DELETE FROM characters WHERE guild_id = ? AND name = ?`, [guildId, nomepg], function(err) {
+        if (err || this.changes === 0) {
+          return interaction.reply({ content: '❌ Personaggio non trovato.', ephemeral: true });
+        }
+        interaction.reply(`🗑 Personaggio **${nomepg}** eliminato dal database.`);
+      });
+    }
+  }
+};

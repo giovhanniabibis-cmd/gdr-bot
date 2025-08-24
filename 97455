@@ -1,0 +1,81 @@
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { isDM } = require('../utils/permissions');
+
+module.exports = {
+  data: new SlashCommandBuilder()
+    .setName('help')
+    .setDescription('Mostra la guida ai comandi, filtrata in base al tuo ruolo'),
+
+  async execute(interaction) {
+    const dm = await isDM(interaction.guild.id, interaction.user.id);
+
+    // Comandi divisi per categorie
+    const pagine = [];
+
+    pagine.push(new EmbedBuilder()
+      .setTitle('📜 Comandi Generali')
+      .setDescription('Comandi base disponibili per tutti')
+      .addFields(
+        { name: '/character', value: 'Gestisci il tuo personaggio' },
+        { name: '/missions', value: 'Visualizza le missioni attive' }
+      )
+      .setColor(0xFFD700)
+    );
+
+    pagine.push(new EmbedBuilder()
+      .setTitle('⚔️ Combattimento')
+      .setDescription('Comandi per il sistema di combattimento')
+      .addFields(
+        { name: '/attack', value: 'Esegui un attacco' },
+        { name: '/initiative', value: 'Mostra ordine iniziativa' }
+      )
+      .setColor(0xFF4500)
+    );
+
+    if (dm) {
+      pagine.push(new EmbedBuilder()
+        .setTitle('🎩 Comandi DM')
+        .setDescription('Comandi speciali per il Master')
+        .addFields(
+          { name: '/heal', value: 'Cura un personaggio' },
+          { name: '/addmission', value: 'Aggiungi una missione' }
+        )
+        .setColor(0x8A2BE2)
+      );
+    }
+
+    let paginaCorrente = 0;
+
+    const row = new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId('prev')
+          .setLabel('⬅️')
+          .setStyle(ButtonStyle.Primary),
+        new ButtonBuilder()
+          .setCustomId('next')
+          .setLabel('➡️')
+          .setStyle(ButtonStyle.Primary)
+      );
+
+    await interaction.reply({ embeds: [pagine[paginaCorrente]], components: [row], ephemeral: true });
+
+    const collector = interaction.channel.createMessageComponentCollector({ time: 60000 });
+
+    collector.on('collect', async i => {
+      if (i.user.id !== interaction.user.id) return i.reply({ content: '❌ Non puoi usare questi pulsanti.', ephemeral: true });
+
+      if (i.customId === 'prev') {
+        paginaCorrente = (paginaCorrente - 1 + pagine.length) % pagine.length;
+      } else if (i.customId === 'next') {
+        paginaCorrente = (paginaCorrente + 1) % pagine.length;
+      }
+
+      await i.update({ embeds: [pagine[paginaCorrente]], components: [row] });
+    });
+
+    collector.on('end', async () => {
+      await interaction.editReply({ components: [] });
+    });
+  }
+};

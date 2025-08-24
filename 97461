@@ -1,0 +1,77 @@
+const { SlashCommandBuilder } = require('discord.js');
+const db = require('../db');
+const { isOwnerOrDM } = require('../utils/permissions');
+
+module.exports = {
+  data: new SlashCommandBuilder()
+    .setName('magic')
+    .setDescription('Gestisci gli incantesimi del tuo personaggio')
+    .addSubcommand(sub =>
+      sub.setName('add')
+        .setDescription('Aggiungi un incantesimo al tuo personaggio')
+        .addStringOption(opt =>
+          opt.setName('nomepg').setDescription('Nome del personaggio').setRequired(true))
+        .addStringOption(opt =>
+          opt.setName('incantesimo').setDescription('Nome incantesimo').setRequired(true))
+    )
+    .addSubcommand(sub =>
+      sub.setName('remove')
+        .setDescription('Rimuovi un incantesimo dal tuo personaggio')
+        .addStringOption(opt =>
+          opt.setName('nomepg').setDescription('Nome del personaggio').setRequired(true))
+        .addStringOption(opt =>
+          opt.setName('incantesimo').setDescription('Nome incantesimo').setRequired(true))
+    )
+    .addSubcommand(sub =>
+      sub.setName('rest')
+        .setDescription('Fai un riposo lungo e recupera gli slot magici')
+        .addStringOption(opt =>
+          opt.setName('nomepg').setDescription('Nome del personaggio').setRequired(true))
+    ),
+
+  async execute(interaction) {
+    const sub = interaction.options.getSubcommand();
+    const nomepg = interaction.options.getString('nomepg');
+    const incantesimo = interaction.options.getString('incantesimo');
+    const guildId = interaction.guild.id;
+    const userId = interaction.user.id;
+
+    // Recupera personaggio e controlla permessi
+    db.get(`SELECT * FROM characters WHERE guild_id = ? AND name = ?`, [guildId, nomepg], async (err, row) => {
+      if (err) {
+        console.error(err);
+        return interaction.reply({ content: '❌ Errore DB', ephemeral: true });
+      }
+      if (!row) {
+        return interaction.reply({ content: '❌ Personaggio non trovato', ephemeral: true });
+      }
+      const permesso = await isOwnerOrDM(row, userId, guildId);
+      if (!permesso) {
+        return interaction.reply({ content: '❌ Non hai il permesso di modificare questo PG', ephemeral: true });
+      }
+
+      // Gestione subcomandi
+      if (sub === 'add') {
+        const nuoviIncantesimi = row.spells ? row.spells.split(',') : [];
+        if (nuoviIncantesimi.includes(incantesimo)) {
+          return interaction.reply({ content: 'ℹ️ Incantesimo già presente.', ephemeral: true });
+        }
+        nuoviIncantesimi.push(incantesimo);
+        db.run(`UPDATE characters SET spells = ? WHERE id = ?`, [nuoviIncantesimi.join(','), row.id]);
+        return interaction.reply(`✨ Incantesimo **${incantesimo}** aggiunto a ${row.name}`);
+      }
+
+      if (sub === 'remove') {
+        let lista = row.spells ? row.spells.split(',') : [];
+        lista = lista.filter(sp => sp !== incantesimo);
+        db.run(`UPDATE characters SET spells = ? WHERE id = ?`, [lista.join(','), row.id]);
+        return interaction.reply(`🗑 Incantesimo **${incantesimo}** rimosso da ${row.name}`);
+      }
+
+      if (sub === 'rest') {
+        db.run(`UPDATE characters SET spell_slots = max_spell_slots WHERE id = ?`, [row.id]);
+        return interaction.reply(`🛏 ${row.name} ha fatto un riposo lungo. Slot magici ripristinati!`);
+      }
+    });
+  }
+};

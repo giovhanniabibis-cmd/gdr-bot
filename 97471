@@ -1,0 +1,74 @@
+const { SlashCommandBuilder } = require('discord.js');
+const db = require('../db');
+const { isDM } = require('../utils/permissions');
+
+// Nota: questo modulo salva solo le tracce nel DB e ne gestisce l'elenco.
+// La riproduzione vera su canale vocale richiede una libreria come @discordjs/voice.
+
+module.exports = {
+  data: new SlashCommandBuilder()
+    .setName('audio')
+    .setDescription('Gestisci musica e tracce di sottofondo')
+    .addSubcommand(sub =>
+      sub.setName('add')
+        .setDescription('Aggiungi una traccia all\'archivio (solo DM)')
+        .addStringOption(opt =>
+          opt.setName('titolo').setDescription('Titolo della traccia').setRequired(true))
+        .addStringOption(opt =>
+          opt.setName('url').setDescription('URL della traccia').setRequired(true))
+    )
+    .addSubcommand(sub =>
+      sub.setName('list')
+        .setDescription('Mostra tutte le tracce in archivio'))
+    .addSubcommand(sub =>
+      sub.setName('remove')
+        .setDescription('Rimuovi una traccia (solo DM)')
+        .addIntegerOption(opt =>
+          opt.setName('id').setDescription('ID della traccia da rimuovere').setRequired(true))
+    ),
+
+  async execute(interaction) {
+    const sub = interaction.options.getSubcommand();
+    const guildId = interaction.guild.id;
+    const userId = interaction.user.id;
+
+    if (sub === 'add') {
+      const dm = await isDM(guildId, userId);
+      if (!dm) return interaction.reply({ content: '❌ Solo il DM può aggiungere tracce.', ephemeral: true });
+
+      const titolo = interaction.options.getString('titolo');
+      const url = interaction.options.getString('url');
+
+      db.run(`INSERT INTO audio_tracks (guild_id, title, url) VALUES (?, ?, ?)`,
+        [guildId, titolo, url],
+        function (err) {
+          if (err) {
+            console.error(err);
+            return interaction.reply({ content: '❌ Errore durante il salvataggio.', ephemeral: true });
+          }
+          interaction.reply(`🎵 Traccia **${titolo}** aggiunta (ID ${this.lastID}).`);
+        });
+    }
+
+    if (sub === 'list') {
+      db.all(`SELECT id, title, url FROM audio_tracks WHERE guild_id = ?`, [guildId], (err, rows) => {
+        if (!rows.length) return interaction.reply('📭 Nessuna traccia trovata.');
+        const elenco = rows.map(t => `**[${t.id}]** ${t.title} — ${t.url}`).join('\n');
+        interaction.reply(`🎼 **Archivio musicale:**\n${elenco}`);
+      });
+    }
+
+    if (sub === 'remove') {
+      const dm = await isDM(guildId, userId);
+      if (!dm) return interaction.reply({ content: '❌ Solo il DM può rimuovere tracce.', ephemeral: true });
+
+      const id = interaction.options.getInteger('id');
+      db.run(`DELETE FROM audio_tracks WHERE id = ? AND guild_id = ?`, [id, guildId], function (err) {
+        if (err || this.changes === 0) {
+          return interaction.reply({ content: '❌ Traccia non trovata.', ephemeral: true });
+        }
+        interaction.reply(`🗑 Traccia ID ${id} rimossa dall'archivio.`);
+      });
+    }
+  }
+};

@@ -1,0 +1,78 @@
+const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const db = require('../db');
+const { isDM } = require('../utils/permissions');
+
+module.exports = {
+  data: new SlashCommandBuilder()
+    .setName('missions')
+    .setDescription('Gestisci o visualizza missioni di campagna')
+    .addSubcommand(sub =>
+      sub.setName('add')
+        .setDescription('Aggiungi una missione (solo DM)')
+        .addStringOption(opt =>
+          opt.setName('titolo').setDescription('Titolo missione').setRequired(true))
+        .addStringOption(opt =>
+          opt.setName('descrizione').setDescription('Descrizione breve').setRequired(true))
+    )
+    .addSubcommand(sub =>
+      sub.setName('complete')
+        .setDescription('Segna una missione come completata (solo DM)')
+        .addIntegerOption(opt =>
+          opt.setName('id').setDescription('ID missione').setRequired(true))
+    )
+    .addSubcommand(sub =>
+      sub.setName('list')
+        .setDescription('Mostra missioni attive')
+    ),
+
+  async execute(interaction) {
+    const sub = interaction.options.getSubcommand();
+    const guildId = interaction.guild.id;
+    const userId = interaction.user.id;
+
+    if (sub === 'add') {
+      const dm = await isDM(guildId, userId);
+      if (!dm) return interaction.reply({ content: '❌ Solo il DM può aggiungere missioni.', ephemeral: true });
+
+      const titolo = interaction.options.getString('titolo');
+      const descr = interaction.options.getString('descrizione');
+
+      db.run(`INSERT INTO missions (guild_id, title, description, active) VALUES (?, ?, ?, 1)`,
+        [guildId, titolo, descr],
+        function(err) {
+          if (err) {
+            console.error(err);
+            return interaction.reply({ content: '❌ Errore nel salvataggio.', ephemeral: true });
+          }
+          interaction.reply(`🆕 Missione **${titolo}** aggiunta (ID ${this.lastID})`);
+        });
+    }
+
+    if (sub === 'complete') {
+      const dm = await isDM(guildId, userId);
+      if (!dm) return interaction.reply({ content: '❌ Solo il DM può completare missioni.', ephemeral: true });
+
+      const id = interaction.options.getInteger('id');
+      db.run(`UPDATE missions SET active = 0 WHERE id = ? AND guild_id = ?`, [id, guildId], function(err) {
+        if (err || this.changes === 0) {
+          return interaction.reply({ content: '❌ Missione non trovata o già completata.', ephemeral: true });
+        }
+        interaction.reply(`✅ Missione ID ${id} segnata come completata.`);
+      });
+    }
+
+    if (sub === 'list') {
+      db.all(`SELECT id, title, description FROM missions WHERE guild_id = ? AND active = 1`, [guildId], (err, rows) => {
+        if (err) return interaction.reply({ content: '❌ Errore nel recupero missioni.', ephemeral: true });
+        if (!rows.length) return interaction.reply('📭 Nessuna missione attiva.');
+
+        const embed = new EmbedBuilder()
+          .setTitle('📜 Missioni attive')
+          .setColor(0x00BFFF)
+          .setDescription(rows.map(m => `**[${m.id}]** ${m.title} — ${m.description}`).join('\n'));
+
+        interaction.reply({ embeds: [embed] });
+      });
+    }
+  }
+};
